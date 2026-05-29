@@ -1,0 +1,16 @@
+{
+  "name": "AI Career Copilot",
+  "short_name": "Career Copilot",
+  "description": "AI-powered career intelligence for resumes, job matching, interviews, and coaching.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#020617",
+  "theme_color": "#020617",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
