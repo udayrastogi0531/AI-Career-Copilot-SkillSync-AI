@@ -48,10 +48,11 @@ const AuthPage = () => {
     googleBtnRef.current.innerHTML = "";
     window.google.accounts.id.renderButton(googleBtnRef.current, {
       type: "standard",
-      theme: "outline",
+      theme: "filled_black",
       size: "large",
       text: "continue_with",
-      width: 280
+      width: 320,
+      shape: "rectangular"
     });
   }, [googleLogin]);
 
@@ -228,10 +229,10 @@ const AuthPage = () => {
               <div className="h-px flex-1 bg-white/10" />
             </div>
 
-            <div className="rounded-xl border border-white/10 bg-slate-900/60 p-3">
+            <div className="rounded-xl border border-white/10 bg-slate-900/60 p-4 flex flex-col items-center justify-center">
               <div 
                 ref={googleBtnRef} 
-                className="flex justify-center [&_div]:w-full [&_button]:w-full [&_button]:rounded-lg [&_button]:border-cyan-300/40 [&_button]:bg-gradient-to-r [&_button]:from-cyan-500/20 [&_button]:to-cyan-400/10 [&_button]:text-cyan-200 [&_button]:shadow-[0_0_20px_rgba(34,211,238,0.25)] [&_button:hover]:from-cyan-500/30 [&_button:hover]:to-cyan-400/20" 
+                className="w-full flex justify-center" 
               />
               {!import.meta.env.VITE_GOOGLE_CLIENT_ID && (
                 <p className="mt-2 text-center text-xs text-amber-300">Set VITE_GOOGLE_CLIENT_ID to enable Google sign-in.</p>
