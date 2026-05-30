@@ -1,7 +1,6 @@
 import { Router } from "express";
 import {
 	forgotPassword,
-	googleLogin,
 	login,
 	resetPasswordController,
 	signup,
@@ -14,7 +13,6 @@ const router = Router();
 
 router.post("/signup", signup);
 router.post("/login", login);
-router.post("/google", googleLogin);
 router.post("/forgot-password", forgotPassword);
 router.get("/reset-password/:token", validateResetPassword);
 router.post("/reset-password", resetPasswordController);

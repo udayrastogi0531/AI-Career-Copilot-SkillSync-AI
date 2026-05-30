@@ -28,11 +28,6 @@ export const AuthProvider = ({ children }) => {
     return data;
   };
 
-  const googleLogin = async (idToken) => {
-    const { data } = await api.post("/auth/google", { idToken });
-    setSession(data.user, data.token);
-  };
-
   const logout = () => {
     setToken("");
     setUser(null);
@@ -54,7 +49,6 @@ export const AuthProvider = ({ children }) => {
       isAuthenticated: Boolean(token),
       login,
       register,
-      googleLogin,
       logout
     }),
     [token, user]

@@ -19,7 +19,6 @@
     "dotenv": "^16.4.5",
     "express": "^4.21.0",
     "express-rate-limit": "^8.5.2",
-    "google-auth-library": "^9.15.1",
     "helmet": "^8.0.0",
     "jsonwebtoken": "^9.0.2",
     "mammoth": "^1.12.0",

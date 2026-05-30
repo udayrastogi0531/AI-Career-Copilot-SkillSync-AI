@@ -5,7 +5,6 @@ import { User } from "../models/User.js";
 import {
   createPasswordResetToken,
   loginUser,
-  loginWithGoogle,
   registerUser,
   resetPassword,
   validateResetToken
@@ -75,20 +74,6 @@ export const login = asyncHandler(async (req, res) => {
   }
 
   const authPayload = await loginUser({ email, password });
-  res.json({ success: true, ...authPayload });
-});
-
-export const googleLogin = asyncHandler(async (req, res) => {
-  const { idToken } = req.body;
-
-  if (!idToken) {
-    const error = new Error("Google idToken is required");
-    error.statusCode = 400;
-    error.code = "GOOGLE_ID_TOKEN_REQUIRED";
-    throw error;
-  }
-
-  const authPayload = await loginWithGoogle({ idToken });
   res.json({ success: true, ...authPayload });
 });
 

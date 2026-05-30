@@ -1,60 +1,22 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { motion } from "framer-motion";
 import { Navigate, useNavigate } from "react-router-dom";
 import ErrorBanner from "../components/ErrorBanner";
 import { useAuth } from "../context/AuthContext";
 
 const AuthPage = () => {
-  const { isAuthenticated, login, register, googleLogin } = useAuth();
+  const { isAuthenticated, login, register } = useAuth();
   const navigate = useNavigate();
   const [mode, setMode] = useState("login");
   const [loading, setLoading] = useState(false);
-  const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState("");
-  const googleBtnRef = useRef(null);
   const [rememberMe, setRememberMe] = useState(true);
   const [form, setForm] = useState({
     name: "",
     email: "",
-    password: ""
+    password: "",
+    confirmPassword: ""
   });
-
-  useEffect(() => {
-    const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-    if (!clientId || !window.google || !googleBtnRef.current) {
-      return;
-    }
-
-    window.google.accounts.id.initialize({
-      client_id: clientId,
-      callback: async ({ credential }) => {
-        if (!credential) {
-          setError("Google login failed");
-          return;
-        }
-
-        setGoogleLoading(true);
-        setError("");
-        try {
-          await googleLogin(credential);
-        } catch (err) {
-          setError(err.response?.data?.message || "Google login failed");
-        } finally {
-          setGoogleLoading(false);
-        }
-      }
-    });
-
-    googleBtnRef.current.innerHTML = "";
-    window.google.accounts.id.renderButton(googleBtnRef.current, {
-      type: "standard",
-      theme: "filled_black",
-      size: "large",
-      text: "continue_with",
-      width: 320,
-      shape: "rectangular"
-    });
-  }, [googleLogin]);
 
   if (isAuthenticated) {
     return <Navigate to="/dashboard" replace />;
@@ -72,12 +34,24 @@ const AuthPage = () => {
     setSuccessMsg("");
     setLoading(true);
 
+    if (mode === "register") {
+      if (form.password !== form.confirmPassword) {
+        setError("Passwords do not match");
+        setLoading(false);
+        return;
+      }
+    }
+
     try {
       if (mode === "login") {
         await login({ email: form.email, password: form.password });
         navigate("/dashboard", { replace: true });
       } else {
-        const data = await register(form);
+        const data = await register({
+          name: form.name,
+          email: form.email,
+          password: form.password
+        });
         setSuccessMsg(data?.message || "Registration successful! Please check your email to verify your account.");
         setMode("login");
       }
@@ -195,6 +169,21 @@ const AuthPage = () => {
               />
             </div>
 
+            {mode === "register" && (
+              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
+                <label className="mb-2 block text-sm font-medium text-slate-300">Confirm Password</label>
+                <input
+                  name="confirmPassword"
+                  type="password"
+                  placeholder="Confirm your password"
+                  value={form.confirmPassword}
+                  onChange={onChange}
+                  required
+                  className="w-full rounded-xl border border-white/15 bg-[#0f172a] px-4 py-3 text-sm text-slate-100 placeholder:text-slate-500 outline-none transition duration-300 focus:border-cyan-300 focus:ring-2 focus:ring-cyan-300/25"
+                />
+              </motion.div>
+            )}
+
             {mode === "login" && (
               <div className="flex items-center justify-between text-xs text-slate-400">
                 <label className="flex items-center gap-2">
@@ -222,51 +211,6 @@ const AuthPage = () => {
                 {successMsg}
               </div>
             )}
-
-            <div className="my-2 flex items-center gap-3 text-xs text-slate-400">
-              <div className="h-px flex-1 bg-white/10" />
-              <span>or continue with</span>
-              <div className="h-px flex-1 bg-white/10" />
-            </div>
-
-            <div className="flex flex-col items-center justify-center space-y-2">
-              <div className="relative w-full rounded-xl overflow-hidden border border-white/10 bg-slate-900/60 p-0 h-[48px] flex items-center justify-center transition duration-300 hover:border-cyan-300/40 hover:bg-slate-900/80 hover:shadow-[0_0_20px_rgba(34,211,238,0.12)]">
-                {/* 1. The Gorgeous Custom Styled Button (Visual Only, z-10) */}
-                <div className="absolute inset-0 z-10 flex items-center justify-center gap-3 text-sm font-semibold text-slate-200 pointer-events-none">
-                  {/* Clean Google SVG Icon (without white background box!) */}
-                  <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none">
-                    <path
-                      d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                      fill="#4285F4"
-                    />
-                    <path
-                      d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                      fill="#34A853"
-                    />
-                    <path
-                      d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-                      fill="#FBBC05"
-                    />
-                    <path
-                      d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-                      fill="#EA4335"
-                    />
-                  </svg>
-                  <span>Continue with Google</span>
-                </div>
-                
-                {/* 2. The Official Google Button (z-20, Opacity-0) */}
-                <div 
-                  ref={googleBtnRef} 
-                  className="absolute inset-0 z-20 w-full h-full opacity-0 [&_iframe]:w-full [&_iframe]:h-full [&_iframe]:cursor-pointer scale-[1.3]" 
-                />
-              </div>
-
-              {!import.meta.env.VITE_GOOGLE_CLIENT_ID && (
-                <p className="text-center text-xs text-amber-300">Set VITE_GOOGLE_CLIENT_ID to enable Google sign-in.</p>
-              )}
-              {googleLoading && <p className="text-center text-xs text-slate-300">Verifying Google account...</p>}
-            </div>
 
             <motion.button
               whileHover={{ scale: 1.02 }}

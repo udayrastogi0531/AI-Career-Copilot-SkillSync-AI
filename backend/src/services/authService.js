@@ -1,11 +1,8 @@
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
-import { OAuth2Client } from "google-auth-library";
 import { User } from "../models/User.js";
 import { env } from "../config/env.js";
-
-const googleClient = new OAuth2Client();
 
 export const registerUser = async ({ name, email, password }) => {
   const existingUser = await User.findOne({ email });
@@ -47,66 +44,12 @@ export const loginUser = async ({ email, password }) => {
   return buildAuthResponse(user);
 };
 
-export const loginWithGoogle = async ({ idToken }) => {
-  if (!idToken) {
-    throw createAuthError("Google token is required", 400, "GOOGLE_TOKEN_MISSING");
-  }
-
-  if (!env.googleClientId) {
-    throw createAuthError("Google auth is not configured on server", 503, "GOOGLE_AUTH_NOT_CONFIGURED");
-  }
-
-  let ticket;
-  try {
-    ticket = await googleClient.verifyIdToken({
-      idToken,
-      audience: env.googleClientId
-    });
-  } catch {
-    throw createAuthError("Invalid Google token", 401, "GOOGLE_TOKEN_INVALID");
-  }
-
-  const payload = ticket.getPayload();
-  const email = String(payload?.email || "").toLowerCase().trim();
-  const name = String(payload?.name || "Google User").trim();
-
-  if (!email) {
-    throw createAuthError("Google account email is unavailable", 400, "GOOGLE_EMAIL_MISSING");
-  }
-
-  let user = await User.findOne({ email });
-
-  if (!user) {
-    const randomPassword = await bcrypt.hash(`${email}:${Date.now()}`, 8);
-    user = await User.create({
-      name,
-      email,
-      password: randomPassword,
-      authProvider: "google",
-      isVerified: true
-    });
-  } else if (!user.authProvider) {
-    user.authProvider = "local";
-    user.isVerified = true;
-    await user.save();
-  } else if (!user.isVerified) {
-    user.isVerified = true;
-    await user.save();
-  }
-
-  return buildAuthResponse(user);
-};
-
 export const createPasswordResetToken = async ({ email }) => {
   const normalizedEmail = String(email || "").toLowerCase().trim();
   const user = await User.findOne({ email: normalizedEmail });
 
   if (!user) {
     throw new Error("Account not found for this email");
-  }
-
-  if (user.authProvider === "google") {
-    throw new Error("This account uses Google sign-in. Use Google to log in.");
   }
 
   const rawToken = crypto.randomBytes(32).toString("hex");

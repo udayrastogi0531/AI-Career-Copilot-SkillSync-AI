@@ -9,7 +9,7 @@ if (missingVars.length) {
   throw new Error(`Missing required environment variables: ${missingVars.join(", ")}`);
 }
 
-const secondaryVars = ["GOOGLE_CLIENT_ID", "RESEND_API_KEY"];
+const secondaryVars = ["RESEND_API_KEY"];
 const missingSecondary = secondaryVars.filter((key) => !process.env[key]);
 
 if (missingSecondary.length) {
@@ -32,7 +32,6 @@ export const env = {
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || "7d",
   geminiApiKey: process.env.GEMINI_API_KEY,
   geminiModel: process.env.GEMINI_MODEL || "models/gemini-2.5-flash",
-  googleClientId: process.env.GOOGLE_CLIENT_ID || "",
   clientUrl: process.env.CLIENT_URL || "http://localhost:5180",
   resendApiKey: process.env.RESEND_API_KEY || ""
 };
