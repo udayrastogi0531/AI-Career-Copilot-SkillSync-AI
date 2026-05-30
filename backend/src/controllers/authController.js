@@ -7,7 +7,8 @@ import {
   loginUser,
   registerUser,
   resetPassword,
-  validateResetToken
+  validateResetToken,
+  buildAuthResponse
 } from "../services/authService.js";
 import { sendEmail } from "../utils/emailSender.js";
 
@@ -59,9 +60,11 @@ export const signup = asyncHandler(async (req, res) => {
     console.log("------------------------------------------------------------");
   }
 
+  const authPayload = buildAuthResponse(user);
   res.status(201).json({
     success: true,
-    message: "Registration successful! A verification link has been dispatched to your email address. Please verify your account before logging in."
+    message: "Registration successful! A verification link has been dispatched to your email address.",
+    ...authPayload
   });
 });
 

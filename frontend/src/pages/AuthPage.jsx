@@ -47,13 +47,12 @@ const AuthPage = () => {
         await login({ email: form.email, password: form.password });
         navigate("/dashboard", { replace: true });
       } else {
-        const data = await register({
+        await register({
           name: form.name,
           email: form.email,
           password: form.password
         });
-        setSuccessMsg(data?.message || "Registration successful! Please check your email to verify your account.");
-        setMode("login");
+        navigate("/dashboard", { replace: true });
       }
     } catch (err) {
       setError(err.response?.data?.message || "Authentication failed");

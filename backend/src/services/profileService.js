@@ -1,7 +1,7 @@
 import { User } from "../models/User.js";
 
 export const getProfile = async (userId) => {
-  const user = await User.findById(userId).select("name email stats personalization profile createdAt updatedAt");
+  const user = await User.findById(userId).select("name email isVerified stats personalization profile createdAt updatedAt");
   if (!user) {
     throw new Error("User not found");
   }

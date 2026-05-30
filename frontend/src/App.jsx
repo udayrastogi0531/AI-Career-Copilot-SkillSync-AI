@@ -8,6 +8,7 @@ import Skeleton from "./components/Skeleton";
 import { Toaster } from "./components/ui/sonner";
 import MobileBottomNav from "./components/MobileBottomNav";
 import FloatingCoach from "./components/FloatingCoach";
+import VerificationBanner from "./components/VerificationBanner";
 import { useAuth } from "./context/AuthContext";
 import AuthPage from "./pages/AuthPage";
 import LandingPage from "./pages/LandingPage";
@@ -45,6 +46,7 @@ const AppLayout = ({ children }) => {
   return (
     <div className="relative min-h-screen">
       <Navbar />
+      <VerificationBanner />
       <motion.div
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}

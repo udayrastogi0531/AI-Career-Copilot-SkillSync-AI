@@ -25,6 +25,9 @@ export const AuthProvider = ({ children }) => {
 
   const register = async (payload) => {
     const { data } = await api.post("/auth/signup", payload);
+    if (data.token && data.user) {
+      setSession(data.user, data.token);
+    }
     return data;
   };
 
@@ -42,6 +45,21 @@ export const AuthProvider = ({ children }) => {
     localStorage.setItem("career_copilot_user", JSON.stringify(nextUser));
   };
 
+  const checkVerificationStatus = async () => {
+    if (!token) return;
+    try {
+      const { data } = await api.get("/profile");
+      if (data.profile) {
+        const updatedUser = { ...user, isVerified: data.profile.isVerified };
+        setUser(updatedUser);
+        localStorage.setItem("career_copilot_user", JSON.stringify(updatedUser));
+        return data.profile.isVerified;
+      }
+    } catch (err) {
+      console.error("Failed to check verification status", err);
+    }
+  };
+
   const value = useMemo(
     () => ({
       token,
@@ -49,7 +67,8 @@ export const AuthProvider = ({ children }) => {
       isAuthenticated: Boolean(token),
       login,
       register,
-      logout
+      logout,
+      checkVerificationStatus
     }),
     [token, user]
   );

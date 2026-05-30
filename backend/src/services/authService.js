@@ -34,12 +34,18 @@ export const loginUser = async ({ email, password }) => {
     throw new Error("Invalid credentials");
   }
 
-  if (!user.isVerified) {
-    const error = new Error("Please verify your email address before logging in. Check your inbox for the verification link.");
-    error.statusCode = 403;
-    error.code = "EMAIL_UNVERIFIED";
-    throw error;
-  }
+  // ─────────────────────────────────────────────────────────────────────────
+  // PRODUCTION MODE: Re-enable this block after custom domain is verified in
+  //   Resend (https://resend.com/domains) and RESEND_FROM_EMAIL is set in .env
+  //   Uncomment the block below to enforce mandatory email verification on login.
+  // ─────────────────────────────────────────────────────────────────────────
+  // if (!user.isVerified) {
+  //   const error = new Error("Please verify your email address before logging in. Check your inbox for the verification link.");
+  //   error.statusCode = 403;
+  //   error.code = "EMAIL_UNVERIFIED";
+  //   throw error;
+  // }
+  // ─────────────────────────────────────────────────────────────────────────
 
   return buildAuthResponse(user);
 };
@@ -97,7 +103,7 @@ const createAuthError = (message, statusCode, code) => {
   return error;
 };
 
-const buildAuthResponse = (user) => {
+export const buildAuthResponse = (user) => {
   const token = jwt.sign({ userId: user._id }, env.jwtSecret, {
     expiresIn: env.jwtExpiresIn
   });
@@ -106,7 +112,8 @@ const buildAuthResponse = (user) => {
     user: {
       id: user._id,
       name: user.name,
-      email: user.email
+      email: user.email,
+      isVerified: user.isVerified  // Required for frontend verification banner
     },
     token
   };
