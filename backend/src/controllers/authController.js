@@ -207,27 +207,31 @@ export const forgotPassword = asyncHandler(async (req, res) => {
   const resetUrl = `${env.clientUrl}/reset-password?token=${rawToken}`;
 
   // Send real-time password-reset email via Resend
-  await sendEmail({
-    to: user.email,
-    subject: "Reset Your AI Career Copilot Password 🔑",
-    html: `
-      <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 30px; border: 1px solid #e2e8f0; border-radius: 16px; background: #ffffff; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
-        <h2 style="color: #0ea5e9; font-weight: 800; margin-bottom: 20px;">Password Reset Request</h2>
-        <p style="color: #334155; font-size: 14px; line-height: 1.6; margin-bottom: 24px;">
-          We received a request to reset your AI Career Copilot password. Click the button below to proceed:
-        </p>
-        <div style="margin: 30px 0; text-align: center;">
-          <a href="${resetUrl}" style="display: inline-block; padding: 14px 28px; font-size: 14px; font-weight: bold; color: #ffffff; background-color: #0ea5e9; text-decoration: none; border-radius: 8px; box-shadow: 0 4px 12px rgba(14, 165, 233, 0.25);">Reset Password</a>
+  try {
+    await sendEmail({
+      to: user.email,
+      subject: "Reset Your AI Career Copilot Password 🔑",
+      html: `
+        <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 30px; border: 1px solid #e2e8f0; border-radius: 16px; background: #ffffff; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+          <h2 style="color: #0ea5e9; font-weight: 800; margin-bottom: 20px;">Password Reset Request</h2>
+          <p style="color: #334155; font-size: 14px; line-height: 1.6; margin-bottom: 24px;">
+            We received a request to reset your AI Career Copilot password. Click the button below to proceed:
+          </p>
+          <div style="margin: 30px 0; text-align: center;">
+            <a href="${resetUrl}" style="display: inline-block; padding: 14px 28px; font-size: 14px; font-weight: bold; color: #ffffff; background-color: #0ea5e9; text-decoration: none; border-radius: 8px; box-shadow: 0 4px 12px rgba(14, 165, 233, 0.25);">Reset Password</a>
+          </div>
+          <p style="color: #64748b; font-size: 12px; line-height: 1.5; margin-top: 20px;">
+            If you did not make this request, you can safely ignore this email. This link is secure and expires in 1 hour.
+          </p>
+          <p style="color: #475569; font-size: 13px; line-height: 1.6; margin-top: 24px;">
+            Best regards,<br/><strong>The AI Career Copilot Team</strong>
+          </p>
         </div>
-        <p style="color: #64748b; font-size: 12px; line-height: 1.5; margin-top: 20px;">
-          If you did not make this request, you can safely ignore this email. This link is secure and expires in 1 hour.
-        </p>
-        <p style="color: #475569; font-size: 13px; line-height: 1.6; margin-top: 24px;">
-          Best regards,<br/><strong>The AI Career Copilot Team</strong>
-        </p>
-      </div>
-    `
-  });
+      `
+    });
+  } catch (emailErr) {
+    console.error("Forgot password email failed to dispatch:", emailErr.message);
+  }
 
   res.json({
     success: true,

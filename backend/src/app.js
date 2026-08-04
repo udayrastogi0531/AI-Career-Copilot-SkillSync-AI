@@ -16,20 +16,31 @@ import portfolioRoutes from "./routes/portfolioRoutes.js";
 
 export const app = express();
 
-const allowedOrigins = new Set([env.clientUrl]);
+// Enable trust proxy for Render / Vercel / Cloudflare load balancers
+app.set("trust proxy", 1);
 
-const isAllowedLocalhost = (origin) => {
-  return /^http:\/\/localhost:\d+$/i.test(origin || "");
+const cleanClientUrl = (env.clientUrl || "").replace(/\/+$/, "");
+
+const isAllowedOrigin = (origin) => {
+  if (!origin) return true; // Allow non-browser / server-to-server requests
+  const cleanedOrigin = origin.replace(/\/+$/, "");
+
+  if (cleanedOrigin === cleanClientUrl) return true;
+  if (/^http:\/\/localhost:\d+$/i.test(cleanedOrigin)) return true;
+  if (/^https:\/\/.*\.vercel\.app$/i.test(cleanedOrigin)) return true;
+  if (/^https:\/\/.*\.onrender\.com$/i.test(cleanedOrigin)) return true;
+
+  return false;
 };
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin || allowedOrigins.has(origin) || isAllowedLocalhost(origin)) {
+      if (isAllowedOrigin(origin)) {
         return callback(null, true);
       }
-
-      return callback(new Error("CORS origin not allowed"));
+      console.warn(`[CORS] Rejected origin: ${origin}`);
+      return callback(null, false);
     },
     credentials: true
   })
@@ -42,7 +53,7 @@ import rateLimit from "express-rate-limit";
 
 const generalLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 120,
+  max: 200,
   message: { success: false, message: "Too many requests. Please try again later." },
   standardHeaders: true,
   legacyHeaders: false,
@@ -50,7 +61,7 @@ const generalLimiter = rateLimit({
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10,
+  max: 60,
   message: { success: false, message: "Too many authentication attempts. Please try again after 15 minutes." },
   standardHeaders: true,
   legacyHeaders: false,
@@ -58,7 +69,7 @@ const authLimiter = rateLimit({
 
 const uploadLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 5,
+  max: 15,
   message: { success: false, message: "Too many upload attempts. Please try again after 15 minutes." },
   standardHeaders: true,
   legacyHeaders: false,
@@ -66,7 +77,7 @@ const uploadLimiter = rateLimit({
 
 const aiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 30,
+  max: 60,
   message: { success: false, message: "Too many AI engine queries. Please try again after 15 minutes." },
   standardHeaders: true,
   legacyHeaders: false,
@@ -76,6 +87,7 @@ app.use(generalLimiter);
 app.use("/api/auth/login", authLimiter);
 app.use("/api/auth/signup", authLimiter);
 app.use("/api/auth/forgot-password", authLimiter);
+
 app.use("/api/resumes/upload", uploadLimiter);
 app.use("/api/resumes/:resumeId/upload-pdf", uploadLimiter);
 app.use("/api/analysis", aiLimiter);
