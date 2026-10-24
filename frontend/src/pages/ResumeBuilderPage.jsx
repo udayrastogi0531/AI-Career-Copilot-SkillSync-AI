@@ -30,7 +30,6 @@ const ResumeBuilderPage = () => {
   const [quickActionResumeId, setQuickActionResumeId] = useState("");
   const [quickUploadFile, setQuickUploadFile] = useState(null);
   const [quickUploading, setQuickUploading] = useState(false);
-  const [improvingResume, setImprovingResume] = useState(false);
   const [quickJobDescription, setQuickJobDescription] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
@@ -575,40 +574,11 @@ const ResumeBuilderPage = () => {
     }
   };
 
-  const handleQuickImprove = async () => {
-    if (!quickActionResumeId) {
-      setError("Please select resume first");
-      return;
-    }
-
-    setImprovingResume(true);
-    setError("");
-    setSuccess("");
-
-    try {
-      const { data } = await api.post("/analysis/improve-resume", {
-        resumeId: quickActionResumeId,
-        jobDescription: quickJobDescription
-      });
-
-      const improvedResume = data?.result?.resume;
-      if (improvedResume) {
-        setForm((prev) => ({
-          ...prev,
-          summary: improvedResume.summary || prev.summary,
-          skills: Array.isArray(improvedResume.skills) ? improvedResume.skills.join(", ") : prev.skills,
-          experience: Array.isArray(improvedResume.experience) && improvedResume.experience.length
-            ? improvedResume.experience
-            : prev.experience
-        }));
-      }
-
-      setSuccess("AI resume improvements applied");
-      await loadResumes();
-    } catch (err) {
-      setError(err.response?.data?.message || "Failed to improve resume");
-    } finally {
-      setImprovingResume(false);
+  // AI edits are proposed in the LaTeX Studio, where the diff can be reviewed
+  // and approved before anything is written to the resume.
+  const handoffToStudio = () => {
+    if (quickJobDescription.trim()) {
+      localStorage.setItem("latex_studio_job", quickJobDescription.trim());
     }
   };
 
@@ -747,14 +717,20 @@ const ResumeBuilderPage = () => {
                 {quickUploading ? "Uploading..." : "📤 Upload File"}
               </button>
 
-              <button
-                type="button"
-                onClick={handleQuickImprove}
-                disabled={improvingResume}
-                className="bg-violet-500/20 border border-violet-500/40 hover:border-violet-500/60 text-violet-300 px-5 py-2 rounded-lg font-bold transition disabled:opacity-60"
+              <Link
+                to={`/studio?resumeId=${quickActionResumeId}`}
+                className="bg-violet-500/20 border border-violet-500/40 hover:border-violet-500/60 text-violet-300 px-5 py-2 rounded-lg font-bold transition text-center"
               >
-                {improvingResume ? "Improving..." : "✨ Improve Resume"}
-              </button>
+                🧪 Open LaTeX Studio
+              </Link>
+
+              <Link
+                to={`/studio?resumeId=${quickActionResumeId}`}
+                onClick={handoffToStudio}
+                className="bg-emerald-500/20 border border-emerald-500/40 hover:border-emerald-500/60 text-emerald-300 px-5 py-2 rounded-lg font-bold transition text-center"
+              >
+                ✨ Review AI changes
+              </Link>
 
               <Link
                 to={`/resume-analyzer?resumeId=${quickActionResumeId}`}

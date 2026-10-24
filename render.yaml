@@ -1,0 +1,59 @@
+# Render blueprint for the API only. The frontend deploys to Vercel
+# (see frontend/vercel.json); the LaTeX compiler is a private container.
+#
+#   1. Create a new Blueprint in Render and point it at this repository.
+#   2. Fill every `sync: false` secret in the dashboard (values are never
+#      committed). MONGODB_URI must be a live Atlas connection string.
+#   3. Set CLIENT_URL and ALLOWED_ORIGINS to the exact frontend origin(s).
+#   4. Deploy, then run:
+#        BASE_URL=https://<service>.onrender.com \
+#        EXPECT_ORIGIN=https://<frontend> npm run verify:deploy
+#
+# The health check is the readiness route on purpose: a deploy whose database
+# is unreachable is reported as failed instead of going live and 500-ing.
+services:
+  - type: web
+    name: skillsync-api
+    runtime: node
+    plan: free
+    region: frankfurt
+    rootDir: backend
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+    healthCheckPath: /api/health/ready
+    autoDeploy: false
+    envVars:
+      - key: NODE_VERSION
+        value: "22.20.0"
+      - key: NODE_ENV
+        value: production
+      # Whether the platform should start the process without these is not
+      # negotiable: env.js throws on a missing value.
+      - key: MONGODB_URI
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      # Public frontend origin(s). No wildcards are accepted by the CORS layer.
+      - key: CLIENT_URL
+        sync: false
+      - key: ALLOWED_ORIGINS
+        sync: false
+      # Transactional email. RESEND_FROM_EMAIL must be on a verified domain.
+      - key: RESEND_API_KEY
+        sync: false
+      - key: RESEND_FROM_EMAIL
+        sync: false
+      - key: REQUIRE_EMAIL_VERIFICATION
+        value: "false"
+      # Isolated compiler. Leave LATEX_COMPILE_URL unset to disable PDF export
+      # rather than running TeX on the API host (LATEX_ALLOW_LOCAL stays false).
+      - key: LATEX_COMPILE_URL
+        sync: false
+      - key: LATEX_COMPILE_TOKEN
+        sync: false
+      - key: LATEX_ALLOW_LOCAL
+        value: "false"
+      - key: GEMINI_MODEL
+        value: models/gemini-2.5-flash

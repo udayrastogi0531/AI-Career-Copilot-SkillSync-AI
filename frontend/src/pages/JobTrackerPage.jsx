@@ -6,13 +6,21 @@ import { api } from "../api/client";
 import ErrorBanner from "../components/ErrorBanner";
 import EmptyState from "../components/EmptyState";
 
-const statuses = ["applied", "interview", "offer", "rejected"];
+const statuses = ["saved", "applied", "interviewing", "offered", "rejected"];
 
 const statusConfig = {
+  saved: { color: "slate", label: "Saved", icon: "🔖", bg: "bg-slate-500/20", border: "border-slate-400/30", text: "text-slate-100" },
   applied: { color: "blue", label: "Applied", icon: "📨", bg: "bg-blue-500/20", border: "border-blue-400/30", text: "text-blue-100" },
-  interview: { color: "amber", label: "Interview", icon: "💬", bg: "bg-amber-500/20", border: "border-amber-400/30", text: "text-amber-100" },
-  offer: { color: "emerald", label: "Offer", icon: "🎉", bg: "bg-emerald-500/20", border: "border-emerald-400/30", text: "text-emerald-100" },
+  interviewing: { color: "amber", label: "Interviewing", icon: "💬", bg: "bg-amber-500/20", border: "border-amber-400/30", text: "text-amber-100" },
+  offered: { color: "emerald", label: "Offered", icon: "🎉", bg: "bg-emerald-500/20", border: "border-emerald-400/30", text: "text-emerald-100" },
   rejected: { color: "rose", label: "Rejected", icon: "❌", bg: "bg-rose-500/20", border: "border-rose-400/30", text: "text-rose-100" }
+};
+
+// Records created before the richer status set used "interview" and "offer".
+const normalizeStatus = (status) => {
+  if (status === "interview") return "interviewing";
+  if (status === "offer") return "offered";
+  return statusConfig[status] ? status : "saved";
 };
 
 export default function JobTrackerPage() {
@@ -20,12 +28,12 @@ export default function JobTrackerPage() {
   const [insights, setInsights] = useState({ remindersDue: 0, followUps: [] });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [form, setForm] = useState({ company: "", role: "", status: "applied" });
+  const [form, setForm] = useState({ company: "", role: "", status: "saved" });
 
   const loadJobs = async () => {
     try {
       const { data } = await api.get("/jobs");
-      setJobs(data.jobs || []);
+      setJobs((data.jobs || []).map((job) => ({ ...job, status: normalizeStatus(job.status) })));
       setInsights(data.insights || { remindersDue: 0, followUps: [] });
     } catch (err) {
       setError(err.response?.data?.message || "Unable to load jobs");
@@ -42,7 +50,7 @@ export default function JobTrackerPage() {
     setError("");
     try {
       await api.post("/jobs", form);
-      setForm({ company: "", role: "", status: "applied" });
+      setForm({ company: "", role: "", status: "saved" });
       await loadJobs();
     } catch (err) {
       setError(err.response?.data?.message || "Failed to add job");

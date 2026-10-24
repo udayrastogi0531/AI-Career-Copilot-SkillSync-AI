@@ -16,7 +16,7 @@ const analysisSchema = new mongoose.Schema(
     },
     analysisType: {
       type: String,
-      enum: ["resume", "job-match", "resume-improve", "cover-letter"],
+      enum: ["resume", "job-match", "skill-gap", "resume-improve", "cover-letter", "workflow"],
       required: true
     },
     result: {
@@ -26,7 +26,14 @@ const analysisSchema = new mongoose.Schema(
     jobDescription: {
       type: String,
       default: ""
-    }
+    },
+    jobDescriptionId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "JobDescription",
+      default: null
+    },
+    engineVersion: { type: String, default: "" },
+    inputHash: { type: String, default: "", index: true }
   },
   { timestamps: true }
 );

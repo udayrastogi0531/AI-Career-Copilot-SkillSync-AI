@@ -1,15 +1,82 @@
-import mammoth from "mammoth";
-import pdf from "pdf-parse";
 import { Analysis } from "../models/Analysis.js";
 import { InterviewSession } from "../models/InterviewSession.js";
 import { Resume } from "../models/Resume.js";
+import { normalizeSkill } from "../utils/skillDictionary.js";
 import { recomputeUserStats } from "./activityService.js";
+import { buildLatexFromResume } from "./latexTemplates.js";
+import { createResumeVersion } from "./resumeVersionService.js";
+import { DOCX_MIME, PDF_MIME, extractDocumentText } from "./documentParser.js";
 
-export const createResume = async (userId, payload) => {
+// Fields a client may edit. Ownership, ids, timestamps, parsed text, and LaTeX
+// storage are deliberately excluded and handled by dedicated services.
+const EDITABLE_FIELDS = [
+  "title",
+  "fullName",
+  "email",
+  "phone",
+  "summary",
+  "skills",
+  "experience",
+  "education",
+  "projects",
+  "certifications",
+  "links",
+  "achievements",
+  "publications",
+  "volunteer",
+  "hackathons",
+  "languages",
+  "awards"
+];
+
+const TEXT_LIMITS = {
+  title: 140,
+  fullName: 120,
+  email: 160,
+  phone: 40,
+  summary: 5000
+};
+
+const pickResumeFields = (payload = {}) => {
+  const result = {};
+  for (const field of EDITABLE_FIELDS) {
+    if (payload[field] === undefined) continue;
+
+    if (field in TEXT_LIMITS) {
+      const value = String(payload[field] ?? "").trim();
+      result[field] = value.slice(0, TEXT_LIMITS[field]);
+      continue;
+    }
+
+    if (field === "skills") {
+      result.skills = normalizeSkills(payload.skills);
+      continue;
+    }
+
+    if (!Array.isArray(payload[field])) {
+      throw Object.assign(new Error(`${field} must be an array`), { statusCode: 400 });
+    }
+    if (payload[field].length > 60) {
+      throw Object.assign(new Error(`${field} has too many entries`), { statusCode: 400 });
+    }
+    result[field] = payload[field];
+  }
+  return result;
+};
+
+export const createResume = async (userId, payload = {}) => {
+  const sanitized = pickResumeFields(payload);
+  if (!sanitized.title) {
+    throw Object.assign(new Error("Resume title is required"), { statusCode: 400 });
+  }
+
   const resume = await Resume.create({
-    ...payload,
+    ...sanitized,
     userId,
-    skills: normalizeSkills(payload.skills)
+    skills: sanitized.skills || [],
+    latexSource: buildLatexFromResume(sanitized, sanitized.templateId || "ats-classic"),
+    templateId: "ats-classic",
+    latexMode: "auto"
   });
 
   await recomputeUserStats(userId);
@@ -17,18 +84,35 @@ export const createResume = async (userId, payload) => {
   return resume;
 };
 
-export const updateResume = async (userId, resumeId, payload) => {
+export const updateResume = async (userId, resumeId, payload = {}) => {
   const resume = await Resume.findOne({ _id: resumeId, userId });
   if (!resume) {
-    throw new Error("Resume not found");
+    throw Object.assign(new Error("Resume not found"), { statusCode: 404 });
   }
 
-  Object.assign(resume, {
-    ...payload,
-    skills: payload.skills ? normalizeSkills(payload.skills) : resume.skills
-  });
+  const sanitized = pickResumeFields(payload);
+  if (!Object.keys(sanitized).length) {
+    throw Object.assign(new Error("No editable resume fields were supplied"), { statusCode: 400 });
+  }
+
+  Object.assign(resume, sanitized);
+
+  // Canonical resume data is the source of truth in auto mode. Manual LaTeX
+  // is preserved until the user explicitly regenerates it.
+  if (resume.latexMode !== "manual" || !resume.latexSource) {
+    resume.latexSource = buildLatexFromResume(resume.toObject(), resume.templateId || "ats-classic");
+    resume.latexMode = "auto";
+  }
 
   await resume.save();
+
+  if (payload.saveVersion) {
+    await createResumeVersion(userId, resume, {
+      label: String(payload.versionLabel || "Manual save").slice(0, 120),
+      reason: "manual"
+    });
+  }
+
   return resume;
 };
 
@@ -39,13 +123,12 @@ export const listResumesByUser = async (userId) => {
 export const getResumeById = async (userId, resumeId) => {
   const resume = await Resume.findOne({ _id: resumeId, userId });
   if (!resume) {
-    throw new Error("Resume not found");
+    throw Object.assign(new Error("Resume not found"), { statusCode: 404 });
   }
   return resume;
 };
 
 export const parseAndStoreResumeFile = async (userId, resumeId, file) => {
-  const resume = await getResumeById(userId, resumeId);
   const fileBuffer = file?.buffer;
   const mimeType = String(file?.mimetype || "").toLowerCase();
 
@@ -54,29 +137,28 @@ export const parseAndStoreResumeFile = async (userId, resumeId, file) => {
     err.statusCode = 400;
     throw err;
   }
-
-  let parsedText;
-
-  try {
-    if (mimeType === "application/pdf") {
-      const parsed = await pdf(fileBuffer);
-      parsedText = String(parsed?.text || "");
-    } else if (mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
-      const parsed = await mammoth.extractRawText({ buffer: fileBuffer });
-      parsedText = String(parsed?.value || "");
-    } else {
-      const err = new Error("Only PDF or DOCX files are allowed");
-      err.statusCode = 400;
-      throw err;
-    }
-  } catch (error) {
-    const err = new Error("Invalid resume file");
+  if (![PDF_MIME, DOCX_MIME].includes(mimeType)) {
+    const err = new Error("Only PDF or DOCX files are allowed");
     err.statusCode = 400;
     throw err;
   }
 
+  // Ownership is checked before any parsing work is spent on the file. When no
+  // resume id is supplied the record is only created after a successful parse,
+  // so a rejected upload never leaves an empty resume behind.
+  const existing = resumeId ? await getResumeById(userId, resumeId) : null;
+
+  const parsed = await extractDocumentText({
+    buffer: fileBuffer,
+    mimeType,
+    filename: file.originalname,
+    maxBytes: 8 * 1024 * 1024
+  });
+  const parsedText = parsed.text;
+
   const extracted = extractStructuredResumeData(parsedText);
 
+  const resume = existing || new Resume({ userId, title: "Uploaded Resume", templateId: "ats-classic" });
   resume.parsedText = parsedText;
 
   if (!resume.summary && extracted.summary) {
@@ -126,7 +208,15 @@ export const parseAndStoreResumeFile = async (userId, resumeId, file) => {
     }));
   }
 
+  if (resume.latexMode !== "manual" || !resume.latexSource) {
+    resume.latexSource = buildLatexFromResume(resume.toObject(), resume.templateId || "ats-classic");
+    resume.latexMode = "auto";
+  }
+
   await resume.save();
+  if (!existing) {
+    await recomputeUserStats(userId);
+  }
   return resume;
 };
 
@@ -140,7 +230,7 @@ export const parseAndStoreResumePdf = async (userId, resumeId, fileBuffer) => {
 export const deleteResume = async (userId, resumeId) => {
   const resume = await Resume.findOneAndDelete({ _id: resumeId, userId });
   if (!resume) {
-    throw new Error("Resume not found");
+    throw Object.assign(new Error("Resume not found"), { statusCode: 404 });
   }
 
   await Promise.all([
@@ -154,18 +244,26 @@ export const deleteResume = async (userId, resumeId) => {
 };
 
 const normalizeSkills = (skills) => {
-  if (!skills) {
-    return [];
-  }
+  if (!skills) return [];
 
-  if (Array.isArray(skills)) {
-    return skills.map((skill) => String(skill).trim()).filter(Boolean);
-  }
+  const list = Array.isArray(skills)
+    ? skills
+    : String(skills)
+        .split(",")
+        .map((skill) => skill.trim());
 
-  return String(skills)
-    .split(",")
-    .map((skill) => skill.trim())
-    .filter(Boolean);
+  const seen = new Set();
+  const result = [];
+  for (const raw of list.slice(0, 100)) {
+    const value = String(raw ?? "").trim();
+    if (!value) continue;
+    const canonical = normalizeSkill(value) || value;
+    const key = canonical.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(canonical);
+  }
+  return result;
 };
 
 const extractStructuredResumeData = (text) => {

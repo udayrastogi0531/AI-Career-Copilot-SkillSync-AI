@@ -147,33 +147,18 @@ export default function DashboardPage() {
       name: `Scan ${idx + 1}`,
       score: Number(item?.score || 0)
     }));
-    // Fill mockup values if empty
-    if (!resumePoints.length) {
-      for (let i = 1; i <= 6; i++) {
-        resumePoints.push({ name: `Scan ${i}`, score: 40 + i * 8 });
-      }
-    }
-
+    // Charts show only real history. Empty arrays render an empty state instead
+    // of placeholder data that would look like real results.
     const interviewPoints = (stats?.interviewTrend || []).slice(-8).map((item, idx) => ({
       name: `Round ${idx + 1}`,
       current: Number(item?.currentScore || 0),
       delta: Number(item?.delta || 0)
     }));
-    if (!interviewPoints.length) {
-      for (let i = 1; i <= 6; i++) {
-        interviewPoints.push({ name: `Round ${i}`, current: 4.5 + i * 0.7 });
-      }
-    }
 
     const jobMatchPoints = (stats?.jobMatchTrend || []).slice(-8).map((item, idx) => ({
       name: `Match ${idx + 1}`,
       score: Number(item?.score || 0)
     }));
-    if (!jobMatchPoints.length) {
-      for (let i = 1; i <= 6; i++) {
-        jobMatchPoints.push({ name: `Match ${i}`, score: 45 + i * 7 });
-      }
-    }
 
     return { resumePoints, interviewPoints, jobMatchPoints };
   }, [stats]);

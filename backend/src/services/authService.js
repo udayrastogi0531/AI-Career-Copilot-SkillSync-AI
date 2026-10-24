@@ -44,14 +44,14 @@ export const loginUser = async ({ email, password }) => {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // PRODUCTION MODE: Re-enable this block after custom domain is verified in
-  //   Resend (https://resend.com/domains) and RESEND_FROM_EMAIL is set in .env
-  //   Uncomment the block below to enforce mandatory email verification on login.
+  // Email verification is opt-in (`REQUIRE_EMAIL_VERIFICATION=true`) because the
+  // shared onboarding@resend.dev sender cannot deliver to arbitrary users until a
+  // domain is verified in Resend. Enable it once RESEND_FROM_EMAIL is a verified
+  // domain; otherwise every self-serve signup would be locked out.
   // ─────────────────────────────────────────────────────────────────────────
-  // if (!user.isVerified) {
-  //   throw createAuthError("Please verify your email address before logging in.", 403, "EMAIL_UNVERIFIED");
-  // }
-  // ─────────────────────────────────────────────────────────────────────────
+  if (env.requireEmailVerification && !user.isVerified) {
+    throw createAuthError("Please verify your email address before logging in.", 403, "EMAIL_UNVERIFIED");
+  }
 
   return buildAuthResponse(user);
 };

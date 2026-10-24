@@ -133,7 +133,17 @@ const resumeSchema = new mongoose.Schema(
     hackathons: [hackathonSchema],
     languages: [languageSchema],
     awards: [awardSchema],
-    parsedText: { type: String, default: "" }
+    parsedText: { type: String, default: "" },
+    latexSource: { type: String, default: "" },
+    templateId: { type: String, default: "ats-classic" },
+    latexMode: {
+      type: String,
+      enum: ["auto", "manual"],
+      default: "auto",
+      // "auto" regenerates LaTeX from canonical data after AI edits;
+      // "manual" preserves hand-edited LaTeX source.
+    },
+    lastCompiledAt: { type: Date }
   },
   { timestamps: true }
 );

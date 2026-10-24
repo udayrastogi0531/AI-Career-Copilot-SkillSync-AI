@@ -119,6 +119,10 @@ const ResumeAnalyzerPage = () => {
   const [error, setError] = useState("");
   const [activeStep, setActiveStep] = useState(0);
   const [showWhy, setShowWhy] = useState(false);
+  const [jobDescription, setJobDescription] = useState("");
+  const [jobDescriptionId, setJobDescriptionId] = useState("");
+  const [extractedJob, setExtractedJob] = useState(null);
+  const [parsingJob, setParsingJob] = useState(false);
 
   useEffect(() => {
     const requestedResumeId = searchParams.get("resumeId");
@@ -142,15 +146,39 @@ const ResumeAnalyzerPage = () => {
       .finally(() => setLoadingResumes(false));
   }, [searchParams]);
 
+  const extractJob = async () => {
+    if (!jobDescription.trim()) {
+      setError("Paste the job description first.");
+      return;
+    }
+    setParsingJob(true);
+    setError("");
+    try {
+      const { data } = await api.post("/job/parse", { text: jobDescription, resumeId: resumeId || null, save: true });
+      setExtractedJob(data.job);
+      setJobDescriptionId(data.jobDescriptionId || "");
+      toast.success("Requirements extracted from the job description");
+    } catch (err) {
+      setError(err.response?.data?.message || "Unable to parse that job description");
+    } finally {
+      setParsingJob(false);
+    }
+  };
+
   const analyze = async () => {
     setAnalyzing(true);
     setError("");
     setResult(null);
     setActiveStep(0);
     try {
-      const { data } = await api.post(`/analysis/resume/${resumeId}`);
+      const payload = jobDescriptionId
+        ? { jobDescriptionId }
+        : jobDescription.trim()
+        ? { jobDescription }
+        : {};
+      const { data } = await api.post(`/analysis/resume/${resumeId}`, payload);
       setResult(data.result);
-      toast.success("Resume analysis completed successfully!");
+      toast.success("Deterministic ATS report generated");
     } catch (err) {
       setError(err.response?.data?.message || "Resume analysis failed");
     } finally {
@@ -247,6 +275,7 @@ const ResumeAnalyzerPage = () => {
           <button
             onClick={analyze}
             disabled={analyzing || !resumeId}
+            title={jobDescriptionId || jobDescription.trim() ? "Run a job-targeted ATS scan" : "Run a resume-only scan"}
             className="btn-glow h-[48px] px-8 disabled:cursor-not-allowed disabled:opacity-40 uppercase tracking-wider text-xs font-bold flex items-center justify-center gap-1.5"
           >
             {analyzing ? (
@@ -257,6 +286,60 @@ const ResumeAnalyzerPage = () => {
               "Trigger Analyzer Scan"
             )}
           </button>
+        </div>
+
+        <div className="mt-6 space-y-3 border-t border-white/5 pt-5">
+          <label className="block text-xs font-bold uppercase tracking-wider text-slate-400">
+            Optional: target job description
+          </label>
+          <textarea
+            rows={6}
+            value={jobDescription}
+            onChange={(event) => {
+              setJobDescription(event.target.value);
+              setJobDescriptionId("");
+              setExtractedJob(null);
+            }}
+            placeholder="Paste a job description to score required keywords and skills against a real role instead of a generic scan."
+            disabled={analyzing}
+          />
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={extractJob}
+              disabled={parsingJob || !jobDescription.trim()}
+              className="rounded-lg border border-white/15 px-4 py-2 text-xs font-bold uppercase tracking-wider disabled:opacity-40"
+            >
+              {parsingJob ? "Extracting..." : "Extract requirements"}
+            </button>
+            <span className="text-[11px] text-slate-500">
+              Leaving this empty runs a resume-only scan: job-dependent dimensions are excluded, not scored as zero.
+            </span>
+          </div>
+
+          {extractedJob && (
+            <div className="rounded-xl border border-cyan-400/30 bg-cyan-400/5 p-4 text-xs text-slate-200">
+              <p className="font-bold text-cyan-200">
+                {extractedJob.title || "Title not detected"}
+                {extractedJob.company ? ` · ${extractedJob.company}` : ""}
+                {extractedJob.location ? ` · ${extractedJob.location}` : ""}
+              </p>
+              <p className="mt-2">
+                <span className="font-bold text-slate-400">Required:</span>{" "}
+                {extractedJob.requiredSkills?.join(", ") || "none detected"}
+              </p>
+              <p className="mt-1">
+                <span className="font-bold text-slate-400">Preferred:</span>{" "}
+                {extractedJob.preferredSkills?.join(", ") || "none detected"}
+              </p>
+              <p className="mt-1">
+                <span className="font-bold text-slate-400">Experience:</span>{" "}
+                {extractedJob.experience?.minYears ? `${extractedJob.experience.minYears}+ years` : "not stated"}
+                {extractedJob.education?.level ? ` · Education: ${extractedJob.education.level}` : ""}
+              </p>
+              <p className="mt-2 text-[11px] text-slate-400">Parsed deterministically (parser v{extractedJob.parserVersion}). Review before scoring.</p>
+            </div>
+          )}
         </div>
       </motion.section>
 
@@ -390,11 +473,22 @@ const ResumeAnalyzerPage = () => {
                         <Terminal className="h-4.5 w-4.5 text-cyan-300" /> Category Weights
                       </p>
                       <ul className="mt-3 space-y-2 text-xs text-slate-300 leading-relaxed list-disc pl-4">
-                        <li>Keywords density & matching relevance (25%)</li>
-                        <li>Focus skills coverage & tags presence (25%)</li>
-                        <li>Experience section bullet quantification & achievements (30%)</li>
-                        <li>Layout structure, headings, and clean tables (20%)</li>
+                        {result?.scoreBreakdown
+                          ? Object.entries(result.scoreBreakdown).map(([key, dimension]) => (
+                              <li key={key}>
+                                {dimension.label}: {dimension.applicable ? `${Math.round(dimension.weight * 100)}% of this score` : "not applicable (no job description or no requirement)"}
+                              </li>
+                            ))
+                          : (
+                            <li>Run a scan to see the exact weights applied to this resume and job description.</li>
+                          )}
                       </ul>
+                      {result?.engineVersion && (
+                        <p className="mt-3 text-[11px] text-slate-500">
+                          Engine {result.engine} v{result.engineVersion} · mode {result.mode} · input hash {result.inputHash}. The same
+                          resume, job description, and weights always produce this same score.
+                        </p>
+                      )}
                     </div>
 
                     <div className="rounded-2xl border border-white/5 bg-slate-950/20 p-5">
@@ -534,18 +628,27 @@ const ResumeAnalyzerPage = () => {
               </div>
 
               <div className="rounded-xl border border-white/5 bg-slate-950/20 p-5">
-                <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Vetting Warnings</span>
-                <ul className="mt-2 space-y-1.5 text-xs text-slate-300 leading-normal">
-                  <li className="flex items-start gap-2">
-                    <span className="text-amber-300 mt-0.5">•</span> Use standard headers like "Work Experience".
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="text-amber-300 mt-0.5">•</span> Ensure clean date alignments.
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="text-amber-300 mt-0.5">•</span> Avoid tables and icons which split characters.
-                  </li>
-                </ul>
+                <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Vetting Warnings ({result.warnings?.length || 0})</span>
+                {result.warnings?.length ? (
+                  <ul className="mt-2 space-y-1.5 text-xs leading-normal text-slate-300">
+                    {result.warnings.map((warning) => (
+                      <li key={warning.code} className="flex items-start gap-2">
+                        <span
+                          className={`mt-0.5 font-bold ${
+                            warning.severity === "high" ? "text-rose-300" : warning.severity === "medium" ? "text-amber-300" : "text-slate-400"
+                          }`}
+                        >
+                          •
+                        </span>
+                        <span>
+                          <span className="font-bold uppercase text-[10px] text-slate-500">{warning.severity}</span> {warning.message}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-2 text-xs text-emerald-300">No formatting or parsing problems detected.</p>
+                )}
               </div>
             </div>
           </article>
@@ -560,64 +663,117 @@ const ResumeAnalyzerPage = () => {
             </article>
           )}
 
-          {/* GIT-STYLE REWRITE DIFF CODEBLOCK */}
-          {!!result.improvements?.length && (
-            <article className="premium-card p-6 space-y-5">
-              <div>
-                <h3 className="text-lg font-bold text-white">AI STAR Bullet Rewrite recommendations</h3>
-                <p className="text-xs text-slate-400 mt-0.5">Git-style visual comparison showing metrics integration.</p>
-              </div>
+          {/* Matched evidence */}
+          <div className="grid gap-6 md:grid-cols-2">
+            {!!result.matchedSkills?.length && (
+              <article className="premium-card p-6">
+                <h3 className="mb-4 flex items-center gap-2 text-lg font-bold text-cyan-200">
+                  <CheckCircle2 className="h-5 w-5" /> Matched Skills
+                </h3>
+                <BadgeGroup items={result.matchedSkills} tone="border-cyan-400/30 bg-cyan-500/10 text-cyan-200" />
+              </article>
+            )}
+            {!!result.matchedKeywords?.length && (
+              <article className="premium-card p-6">
+                <h3 className="mb-4 flex items-center gap-2 text-lg font-bold text-blue-200">
+                  <Sparkles className="h-5 w-5" /> Matched Keywords
+                </h3>
+                <BadgeGroup items={result.matchedKeywords.slice(0, 40)} tone="border-blue-400/30 bg-blue-500/10 text-blue-200" />
+              </article>
+            )}
+          </div>
 
-              <div className="space-y-4">
-                {result.improvements.map((improvement, index) => (
-                  <motion.div
-                    key={`${improvement}-${index}`}
-                    initial={{ opacity: 0, x: -8 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ duration: 0.3, delay: index * 0.05 }}
-                    className="rounded-2xl border border-white/10 bg-slate-950/40 p-4 space-y-2.5"
-                  >
-                    <p className="text-xs font-bold text-cyan-200">
-                      Recommendation {index + 1}
-                    </p>
-                    <p className="text-sm text-slate-200">{improvement}</p>
-                  </motion.div>
+          {/* Requirement matrix from the job description */}
+          {!!result.requirements?.length && (
+            <article className="premium-card p-6">
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-lg font-bold text-white">Requirement-by-requirement evidence</h3>
+                <span className="rounded-full border border-white/10 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  {result.requirementSummary?.passed} / {result.requirementSummary?.total} matched
+                </span>
+              </div>
+              <ul className="divide-y divide-white/5">
+                {result.requirements.map((row, index) => (
+                  <li key={index} className="py-3">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <p className="flex-1 text-xs font-semibold text-slate-200">{row.requirement}</p>
+                      <span
+                        className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                          row.passed
+                            ? "border-emerald-400/30 bg-emerald-500/10 text-emerald-300"
+                            : "border-rose-400/30 bg-rose-500/10 text-rose-300"
+                        }`}
+                      >
+                        {row.passed ? "evidence found" : "no evidence"}
+                      </span>
+                    </div>
+                    {row.matchedSkills?.length > 0 && (
+                      <p className="mt-1 text-[11px] text-slate-400">Matched: {row.matchedSkills.join(", ")}</p>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </article>
+          )}
+
+          {/* Deterministic recommendations */}
+          {!!result.recommendations?.length && (
+            <article className="premium-card p-6 space-y-4">
+              <div>
+                <h3 className="text-lg font-bold text-white">Prioritised recommendations</h3>
+                <p className="mt-0.5 text-xs text-slate-400">
+                  Generated by the deterministic engine. AI commentary is always labelled separately.
+                </p>
+              </div>
+              <div className="space-y-3">
+                {result.recommendations.map((item, index) => (
+                  <div key={`${item.message}-${index}`} className="flex items-start gap-3 rounded-xl border border-white/10 bg-slate-950/30 px-4 py-3">
+                    <span
+                      className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                        item.priority === "high"
+                          ? "bg-rose-500/20 text-rose-200"
+                          : item.priority === "medium"
+                          ? "bg-amber-500/20 text-amber-200"
+                          : "bg-slate-500/20 text-slate-300"
+                      }`}
+                    >
+                      {item.priority}
+                    </span>
+                    <p className="text-xs leading-relaxed text-slate-200">{item.message}</p>
+                  </div>
                 ))}
               </div>
+            </article>
+          )}
 
-              {/* Simulated Git Diff visual card */}
-              <div className="rounded-2xl border border-white/10 bg-slate-950/60 p-5 space-y-4">
+          {/* AI commentary when available */}
+          {(result.ai_strengths?.length || result.ai_improvements?.length || result.ai_rewrite_suggestions?.length) && (
+            <article className="premium-card space-y-4 p-6">
+              <h3 className="text-lg font-bold text-white">AI commentary (labelled, non-scoring)</h3>
+              {!!result.ai_strengths?.length && (
                 <div>
-                  <p className="text-xs uppercase font-extrabold tracking-wider text-slate-400">Git Diff Rewrite Visualizer</p>
-                  <p className="text-[10px] text-slate-500 mt-0.5">Quantifying outputs using STAR metrics.</p>
+                  <p className="text-xs font-bold uppercase tracking-wider text-emerald-300">Strengths</p>
+                  <ul className="mt-1 list-disc space-y-1 pl-4 text-xs text-slate-200">
+                    {result.ai_strengths.map((item, index) => <li key={index}>{item}</li>)}
+                  </ul>
                 </div>
-
-                <div className="rounded-xl overflow-hidden border border-white/10 font-mono text-xs">
-                  {/* Deleted / Unquantified */}
-                  <div className="bg-rose-950/30 border-b border-white/5 p-4 space-y-1">
-                    <div className="flex items-center gap-2 text-rose-300 font-bold text-[10px] uppercase tracking-wider mb-2">
-                      <span className="rounded bg-rose-500/20 px-1 py-0.5">- Deleted Weak Bullet</span>
-                    </div>
-                    <p className="text-rose-100 flex items-start gap-2">
-                      <span className="text-rose-400 font-bold select-none">-</span>
-                      <span>"Worked on developing the company analytical metrics web dashboard system."</span>
-                    </p>
-                  </div>
-
-                  {/* Added / Quantified */}
-                  <div className="bg-emerald-950/30 p-4 space-y-1">
-                    <div className="flex items-center gap-2 text-emerald-300 font-bold text-[10px] uppercase tracking-wider mb-2">
-                      <span className="rounded bg-emerald-500/20 px-1 py-0.5">+ Added Quantified STAR accomplishment</span>
-                    </div>
-                    <p className="text-emerald-100 flex items-start gap-2 leading-relaxed">
-                      <span className="text-emerald-400 font-bold select-none">+</span>
-                      <span>
-                        "Architected modern MERN analytical metrics dashboard in React for <strong className="text-emerald-300 font-bold">12K active users</strong>, improving rendering sprints load times by <strong className="text-emerald-300 font-bold">42%</strong>."
-                      </span>
-                    </p>
-                  </div>
+              )}
+              {!!result.ai_improvements?.length && (
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wider text-amber-300">Improvements</p>
+                  <ul className="mt-1 list-disc space-y-1 pl-4 text-xs text-slate-200">
+                    {result.ai_improvements.map((item, index) => <li key={index}>{item}</li>)}
+                  </ul>
                 </div>
-              </div>
+              )}
+              {!!result.ai_rewrite_suggestions?.length && (
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wider text-cyan-300">Rewrite suggestions</p>
+                  <ul className="mt-1 list-disc space-y-1 pl-4 text-xs text-slate-200">
+                    {result.ai_rewrite_suggestions.map((item, index) => <li key={index}>{item}</li>)}
+                  </ul>
+                </div>
+              )}
             </article>
           )}
 

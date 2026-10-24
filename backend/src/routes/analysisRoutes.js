@@ -1,11 +1,12 @@
 import { Router } from "express";
 import {
-	analysisHistoryController,
-	improveResumeController,
-	jobMatchController,
-	skillGapController,
-	resumeAnalysisController,
-	coverLetterController
+  analysisHistoryController,
+  coverLetterController,
+  coverLetterHistoryController,
+  jobMatchController,
+  resumeAnalysisController,
+  skillGapController,
+  updateCoverLetterController
 } from "../controllers/analysisController.js";
 import { protect } from "../middlewares/authMiddleware.js";
 
@@ -16,8 +17,9 @@ router.use(protect);
 router.post("/resume/:resumeId", resumeAnalysisController);
 router.post("/job-match", jobMatchController);
 router.post("/skill-gap", skillGapController);
-router.post("/improve-resume", improveResumeController);
 router.post("/generate-cover-letter", coverLetterController);
+router.get("/cover-letters", coverLetterHistoryController);
+router.patch("/cover-letters/:coverLetterId", updateCoverLetterController);
 router.get("/history", analysisHistoryController);
 
 export default router;

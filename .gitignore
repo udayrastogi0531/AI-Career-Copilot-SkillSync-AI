@@ -28,6 +28,17 @@ pnpm-debug.log*
 *.log
 frontend/build_log.txt
 
+# Local toolchain (downloaded LaTeX engine) and smoke-test artifacts
+backend/.tools/
+backend/.smoke-server.log
+backend/.smoke-server.pid
+backend/server.out.log
+backend/server.err.log
+
+# Stray root lockfile: dependencies live in backend/ and frontend/, and there is
+# no root package.json for a lockfile to describe.
+/package-lock.json
+
 # Temp & Cache folders
 .parcel-cache/
 .eslintcache

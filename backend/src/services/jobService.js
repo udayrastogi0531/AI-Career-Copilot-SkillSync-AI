@@ -32,7 +32,7 @@ export const listJobApplications = async (userId) => {
 export const updateJobApplication = async (userId, jobId, payload) => {
   const record = await JobApplication.findOne({ _id: jobId, userId });
   if (!record) {
-    throw new Error("Job entry not found");
+    throw Object.assign(new Error("Job entry not found"), { statusCode: 404 });
   }
 
   if (payload.company !== undefined) record.company = String(payload.company || "").trim();
@@ -50,7 +50,7 @@ export const updateJobApplication = async (userId, jobId, payload) => {
 export const deleteJobApplication = async (userId, jobId) => {
   const deleted = await JobApplication.findOneAndDelete({ _id: jobId, userId });
   if (!deleted) {
-    throw new Error("Job entry not found");
+    throw Object.assign(new Error("Job entry not found"), { statusCode: 404 });
   }
   return { deleted: true };
 };

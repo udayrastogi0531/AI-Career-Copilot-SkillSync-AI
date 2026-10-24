@@ -30,6 +30,7 @@ export const signup = asyncHandler(async (req, res) => {
   const verifyUrl = `${env.clientUrl}/verify-email?token=${token}`;
 
   // Send real-time verification email via Resend
+  let emailDispatched = false;
   try {
     await sendEmail({
       to: email,
@@ -53,17 +54,25 @@ export const signup = asyncHandler(async (req, res) => {
         </div>
       `
     });
+    emailDispatched = true;
   } catch (err) {
     console.error("Signup verification email failed to dispatch:", err.message);
-    console.log("---------------- DEV MODE VERIFICATION LINK ----------------");
-    console.log(`[Verification URL]: ${verifyUrl}`);
-    console.log("------------------------------------------------------------");
+    // Never print a live verification token in production logs: it is a
+    // single-use account credential.
+    if (env.nodeEnv !== "production") {
+      console.log("---------------- DEV MODE VERIFICATION LINK ----------------");
+      console.log(`[Verification URL]: ${verifyUrl}`);
+      console.log("------------------------------------------------------------");
+    }
   }
 
   const authPayload = buildAuthResponse(user);
   res.status(201).json({
     success: true,
-    message: "Registration successful! A verification link has been dispatched to your email address.",
+    emailDispatched,
+    message: emailDispatched
+      ? "Registration successful! Check your inbox for the verification link."
+      : "Registration successful, but the verification email could not be sent. Use \"Resend verification\" once email delivery is configured.",
     ...authPayload
   });
 });
@@ -185,9 +194,11 @@ export const resendVerificationController = asyncHandler(async (req, res) => {
     });
   } catch (err) {
     console.error("Resend verification email failed to dispatch:", err.message);
-    console.log("---------------- DEV MODE VERIFICATION LINK ----------------");
-    console.log(`[Verification URL]: ${verifyUrl}`);
-    console.log("------------------------------------------------------------");
+    if (env.nodeEnv !== "production") {
+      console.log("---------------- DEV MODE VERIFICATION LINK ----------------");
+      console.log(`[Verification URL]: ${verifyUrl}`);
+      console.log("------------------------------------------------------------");
+    }
   }
 
   res.json({

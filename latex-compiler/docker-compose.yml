@@ -1,0 +1,38 @@
+# Hardened runtime for the LaTeX compiler.
+#
+#   cd latex-compiler
+#   COMPILE_TOKEN="$(openssl rand -hex 32)" docker compose up -d --build
+#   # then set the SAME token as LATEX_COMPILE_TOKEN on the API server and
+#   # LATEX_COMPILE_URL=http://latex-compiler:8080/compile (same network).
+#
+# The compiler has no published port, no internet egress (internal network),
+# a read-only root filesystem, a small writable /tmp, and hard memory/CPU/PID
+# caps. Only containers on `compiler_net` can reach it.
+services:
+  latex-compiler:
+    build: .
+    image: skillsync-latex-compiler:0.17.0
+    restart: unless-stopped
+    environment:
+      COMPILE_TOKEN: "${COMPILE_TOKEN:?set COMPILE_TOKEN to a long random value}"
+      MAX_CONCURRENCY: "2"
+      TIMEOUT_MS: "20000"
+      MAX_SOURCE_BYTES: "200000"
+      MAX_OUTPUT_BYTES: "5242880"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    memswap_limit: 512m
+    cpus: "1.0"
+    pids_limit: 64
+    networks:
+      - compiler_net
+
+networks:
+  compiler_net:
+    internal: true

@@ -1,60 +1,153 @@
 import { Analysis } from "../models/Analysis.js";
+import { CoverLetter } from "../models/CoverLetter.js";
 import { Resume } from "../models/Resume.js";
-import { analyzeResumeWithAI, buildSkillGapRoadmapWithAI, improveResumeWithAI, jobMatchWithAI, generateCoverLetterWithAI } from "./aiService.js";
+import { env } from "../config/env.js";
+import {
+  generateAtsNarrative,
+  generateCoverLetterWithAI,
+  generateJobMatchNarrative
+} from "./aiService.js";
+import { ATS_ENGINE_VERSION, computeAtsScore } from "./atsEngine.js";
+import { computeJobMatch, JOB_MATCH_ENGINE_VERSION } from "./jobMatchEngine.js";
+import { resolveJobDescription } from "./jobDescriptionService.js";
+import { parseJobDescription } from "./jdParser.js";
 import { recomputeUserStats, trackActivity } from "./activityService.js";
 
-export const analyzeResume = async (userId, resumeId) => {
-  const resume = await Resume.findOne({ _id: resumeId, userId });
-  if (!resume) {
-    throw new Error("Resume not found");
+const serviceError = (message, statusCode = 404) => Object.assign(new Error(message), { statusCode });
+
+const parseConfiguredWeights = () => {
+  if (!env.atsWeights) return {};
+  try {
+    const parsed = JSON.parse(env.atsWeights);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    console.warn("[ATS] ATS_WEIGHTS_JSON is not valid JSON; default weights will be used.");
+    return {};
   }
+};
 
-  const result = await analyzeResumeWithAI(resume.toObject());
-  const diagnostics = computeAtsDiagnostics(resume.toObject(), result);
+const findResume = async (userId, resumeId) => {
+  const resume = await Resume.findOne({ _id: resumeId, userId });
+  if (!resume) throw serviceError("Resume not found");
+  return resume;
+};
 
-  const finalResult = {
-    ...result,
-    score: diagnostics.weightedScore,
-    score_breakdown: diagnostics.breakdown,
-    issues: diagnostics.issues,
-    suggestions: [...new Set([...(result.improvements || []), ...diagnostics.suggestions])]
+const aiFailure = (error) => ({
+  available: false,
+  code: error?.code || "AI_PROVIDER_FAILED",
+  message: error?.message || "AI commentary is unavailable."
+});
+
+export const analyzeResume = async (userId, resumeId, options = {}) => {
+  const resume = await findResume(userId, resumeId);
+
+  const jobInput = await resolveJobDescription(userId, {
+    jobDescriptionId: options.jobDescriptionId,
+    jobDescription: options.jobDescription
+  });
+
+  const deterministic = computeAtsScore({
+    resume: resume.toObject(),
+    parsedJob: jobInput?.parsed || (options.jobDescription ? parseJobDescription(options.jobDescription) : null),
+    jobDescription: jobInput?.rawText || options.jobDescription || "",
+    weights: parseConfiguredWeights()
+  });
+
+  const report = {
+    ...deterministic,
+    jobDescriptionId: jobInput?.id ? String(jobInput.id) : null,
+    ai: { available: false }
   };
+
+  if (options.useAI !== false) {
+    try {
+      const narrative = await generateAtsNarrative({ resume: resume.toObject(), deterministic });
+      report.ai = { available: true };
+      if (narrative.recruiter_feedback) report.recruiter_feedback = narrative.recruiter_feedback;
+      report.ai_strengths = narrative.strengths;
+      report.ai_improvements = narrative.improvements;
+      report.ai_rewrite_suggestions = narrative.rewrite_suggestions;
+    } catch (error) {
+      report.ai = aiFailure(error);
+      console.warn("[ATS] AI narrative unavailable:", error.code || error.message);
+    }
+  }
 
   await Analysis.create({
     userId,
     resumeId,
     analysisType: "resume",
-    result: finalResult
+    result: report,
+    jobDescription: String(jobInput?.rawText || options.jobDescription || "").slice(0, 30000),
+    jobDescriptionId: jobInput?.id || null,
+    engineVersion: ATS_ENGINE_VERSION,
+    inputHash: deterministic.inputHash
   });
 
   await trackActivity(userId, "ATS", {
     resumeId,
-    score: finalResult.score,
-    issues: finalResult.issues || [],
-    suggestions: finalResult.suggestions || []
+    score: report.score,
+    inputHash: report.inputHash,
+    issues: report.warnings || []
   });
   await recomputeUserStats(userId);
 
-  return finalResult;
+  return report;
 };
 
-export const analyzeJobMatch = async (userId, resumeId, jobDescription) => {
-  const resume = await Resume.findOne({ _id: resumeId, userId });
-  if (!resume) {
-    throw new Error("Resume not found");
+export const analyzeJobMatch = async (userId, resumeId, options = {}) => {
+  const resume = await findResume(userId, resumeId);
+  const jobInput = await resolveJobDescription(userId, {
+    jobDescriptionId: options.jobDescriptionId,
+    jobDescription: options.jobDescription
+  });
+
+  if (!jobInput) {
+    throw serviceError("A job description or jobDescriptionId is required.", 400);
   }
 
-  const result = await jobMatchWithAI({
-    resumeInput: resume.toObject(),
-    jobDescription
+  const deterministic = computeJobMatch({
+    resume: resume.toObject(),
+    jobDescription: jobInput.rawText,
+    parsedJob: jobInput.parsed
   });
+
+  const result = {
+    ...deterministic,
+    jobDescriptionId: jobInput.id ? String(jobInput.id) : null,
+    ai: { available: false }
+  };
+
+  if (options.useAI !== false) {
+    try {
+      const narrative = await generateJobMatchNarrative({
+        resume: resume.toObject(),
+        job: { description: jobInput.rawText, ...jobInput.parsed },
+        deterministic
+      });
+      result.recommendation = narrative.recommendation;
+      result.transferable_strengths = narrative.transferable_strengths;
+      result.interview_focus = narrative.interview_focus;
+      result.ai = { available: true };
+    } catch (error) {
+      result.ai = aiFailure(error);
+      result.recommendation =
+        "Deterministic match computed. AI commentary is unavailable, so review the requirement matrix and gaps below.";
+      console.warn("[JOB_MATCH] AI narrative unavailable:", error.code || error.message);
+    }
+  } else {
+    result.recommendation =
+      "Deterministic match computed. Review the requirement matrix, missing skills, and roadmap.";
+  }
 
   await Analysis.create({
     userId,
     resumeId,
     analysisType: "job-match",
     result,
-    jobDescription
+    jobDescription: jobInput.rawText.slice(0, 30000),
+    jobDescriptionId: jobInput.id || null,
+    engineVersion: JOB_MATCH_ENGINE_VERSION
   });
 
   await trackActivity(userId, "JOB_MATCH", {
@@ -66,290 +159,144 @@ export const analyzeJobMatch = async (userId, resumeId, jobDescription) => {
   return result;
 };
 
-export const listAnalysisHistory = async (userId, limit = 20) => {
-  const rows = await Analysis.find({ userId })
-    .sort({ createdAt: -1 })
-    .limit(Math.min(Number(limit) || 20, 100))
-    .select("analysisType result createdAt resumeId");
+export const analyzeSkillGap = async (userId, resumeId, options = {}) => {
+  const resume = await findResume(userId, resumeId);
+  const jobInput = await resolveJobDescription(userId, {
+    jobDescriptionId: options.jobDescriptionId,
+    jobDescription: options.jobDescription
+  });
+  if (!jobInput) throw serviceError("A job description or jobDescriptionId is required.", 400);
 
-  return rows;
-};
-
-export const improveResume = async (userId, resumeId, jobDescription = "") => {
-  const resume = await Resume.findOne({ _id: resumeId, userId });
-  if (!resume) {
-    throw new Error("Resume not found");
-  }
-
-  const improved = await improveResumeWithAI({
-    resumeInput: resume.toObject(),
-    jobDescription
+  const match = computeJobMatch({
+    resume: resume.toObject(),
+    jobDescription: jobInput.rawText,
+    parsedJob: jobInput.parsed
   });
 
-  const enhancedExperience = mergeExperienceBullets(resume.experience, improved.improved_experience_bullets);
-
-  const updatedPayload = {
-    summary: improved.improved_summary || resume.summary,
-    skills: [...new Set([...(resume.skills || []), ...improved.improved_skills])],
-    experience: enhancedExperience
-  };
-
-  Object.assign(resume, updatedPayload);
-  await resume.save();
-
   const result = {
-    ...improved,
-    resume: resume.toObject()
+    engineVersion: match.engineVersion,
+    jobDescriptionId: jobInput.id ? String(jobInput.id) : null,
+    match_percentage: match.match_percentage,
+    missing_skills: match.missing_skills,
+    preferred_gaps: match.preferred_gaps,
+    critical_gaps: match.critical_gaps,
+    matched_skills: match.matched_skills,
+    matched_keywords: match.matched_keywords,
+    missing_keywords: match.missing_keywords,
+    requirements: match.requirements,
+    evidence: match.evidence,
+    roadmap: match.roadmap,
+    project_suggestions: match.project_suggestions,
+    next_best_skill: match.next_best_skill,
+    generatedAt: match.generatedAt
   };
 
   await Analysis.create({
     userId,
     resumeId,
-    analysisType: "resume-improve",
+    analysisType: "skill-gap",
     result,
-    jobDescription
+    jobDescription: jobInput.rawText.slice(0, 30000),
+    jobDescriptionId: jobInput.id || null,
+    engineVersion: JOB_MATCH_ENGINE_VERSION
   });
-
-  await recomputeUserStats(userId);
 
   return result;
 };
 
-export const analyzeSkillGap = async (userId, resumeId, jobDescription) => {
-  const jobMatch = await analyzeJobMatch(userId, resumeId, jobDescription);
-  const missingSkills = Array.isArray(jobMatch.missing_skills) ? jobMatch.missing_skills : [];
-
-  const aiRoadmap = await buildSkillGapRoadmapWithAI(missingSkills);
-  const fallbackRoadmap = buildFallbackRoadmap(missingSkills);
-
-  const roadmap = aiRoadmap.roadmap.length ? aiRoadmap.roadmap : fallbackRoadmap;
-
-  return {
-    missing_skills: missingSkills,
-    roadmap,
-    next_best_skill: aiRoadmap.next_best_skill || roadmap[0]?.skill || ""
-  };
+export const listAnalysisHistory = async (userId, limit = 20) => {
+  return Analysis.find({ userId })
+    .sort({ createdAt: -1 })
+    .limit(Math.min(Number(limit) || 20, 100))
+    .select("analysisType result.score result.match_percentage result.inputHash createdAt resumeId jobDescriptionId");
 };
 
-export const generateCoverLetter = async (userId, resumeId, jobDescription) => {
-  const resume = await Resume.findOne({ _id: resumeId, userId });
-  if (!resume) {
-    throw new Error("Resume not found");
-  }
+const collectNumbers = (text) => {
+  const matches = String(text || "").match(/\b\d+(?:\.\d+)?%?\b|\$\s?\d[\d,.]*/g) || [];
+  return new Set(matches.map((match) => match.replace(/\s+/g, "").toLowerCase()));
+};
+
+export const generateCoverLetter = async (userId, resumeId, options = {}) => {
+  const resume = await findResume(userId, resumeId);
+  const jobInput = await resolveJobDescription(userId, {
+    jobDescriptionId: options.jobDescriptionId,
+    jobDescription: options.jobDescription
+  });
+  if (!jobInput) throw serviceError("A job description or jobDescriptionId is required.", 400);
+
+  const tone = ["professional", "concise", "technical", "enthusiastic"].includes(options.tone)
+    ? options.tone
+    : "professional";
 
   const result = await generateCoverLetterWithAI({
     resumeInput: resume.toObject(),
-    jobDescription
+    jobDescription: jobInput.rawText,
+    tone,
+    role: options.role || jobInput.parsed?.title || "",
+    company: options.company || jobInput.parsed?.company || ""
+  });
+
+  const knownNumbers = new Set([
+    ...collectNumbers(JSON.stringify(resume.toObject())),
+    ...collectNumbers(jobInput.rawText)
+  ]);
+  const introducedNumbers = [...collectNumbers(result.letter)].filter((number) => !knownNumbers.has(number));
+  const warnings = introducedNumbers.length
+    ? [
+        `The generated letter contains numeric claims that are not in your resume or the job description: ${introducedNumbers.join(
+          ", "
+        )}. Remove or verify them before sending.`
+      ]
+    : [];
+
+  const record = await CoverLetter.create({
+    userId,
+    resumeId,
+    jobDescriptionId: jobInput.id || null,
+    tone,
+    role: options.role || jobInput.parsed?.title || "",
+    company: options.company || jobInput.parsed?.company || "",
+    jobDescription: jobInput.rawText,
+    content: result.letter,
+    highlights: result.highlights,
+    model: env.geminiModel
   });
 
   await Analysis.create({
     userId,
     resumeId,
     analysisType: "cover-letter",
-    result,
-    jobDescription
+    result: { letter: result.letter, highlights: result.highlights, tone, warnings },
+    jobDescription: jobInput.rawText.slice(0, 30000),
+    jobDescriptionId: jobInput.id || null
   });
-
-  return result;
-};
-
-const computeAtsDiagnostics = (resumeInput, aiResult) => {
-  const skills = Array.isArray(resumeInput?.skills) ? resumeInput.skills : [];
-  const sections = {
-    summary: Boolean(String(resumeInput?.summary || "").trim()),
-    experience: Array.isArray(resumeInput?.experience) && resumeInput.experience.length > 0,
-    education: Array.isArray(resumeInput?.education) && resumeInput.education.length > 0,
-    projects: Array.isArray(resumeInput?.projects) && resumeInput.projects.length > 0,
-    certifications: Array.isArray(resumeInput?.certifications) && resumeInput.certifications.length > 0,
-    links: Array.isArray(resumeInput?.links) && resumeInput.links.length > 0
-  };
-
-  const parsedText = String(resumeInput?.parsedText || "").trim();
-  const wordCount = parsedText.split(/\s+/).filter(Boolean).length;
-
-  // KEYWORDS SCORE (40%) - Based on skill density and keyword matching
-  const keywordDensity = Math.min(1, skills.length / 14);
-  const keywordScore = Math.round(keywordDensity * 100);
-  const keywordRelevance = calculateKeywordRelevance(parsedText, skills);
-
-  // SKILLS MATCH (30%) - Overlap with resume content
-  const skillsMatchScore = Math.round(keywordRelevance * 100);
-
-  // EXPERIENCE SCORE (20%)
-  const experienceScore = scoreExperienceStrength(resumeInput?.experience || []);
-
-  // FORMAT SCORE (10%) - Content length, structure, formatting
-  const formatScore = scoreFormatting(wordCount, sections);
-
-  // Calculate weighted score with new weights
-  const weightedScore = Math.round(
-    keywordScore * 0.25 +        // Keywords: 25%
-    skillsMatchScore * 0.25 +    // Skills: 25%
-    experienceScore * 0.30 +     // Experience: 30%
-    formatScore * 0.20           // Format: 20%
-  );
-
-  const issues = [];
-  const suggestions = [];
-
-  // Keywords analysis
-  if (skills.length < 6) {
-    issues.push("Low number of technical skills listed");
-    suggestions.push("Add at least 8-10 relevant technical skills.");
-  }
-
-  // Sections analysis
-  const completedSections = Object.values(sections).filter(Boolean).length;
-  if (completedSections < 4) {
-    issues.push("Missing key resume sections");
-    suggestions.push("Add missing sections: summary, experience, education, projects.");
-  }
-
-  // Experience analysis
-  if (!sections.experience) {
-    issues.push("No professional experience found");
-    suggestions.push("Add work experience with quantifiable achievements.");
-  }
-
-  // Content length analysis
-  if (wordCount < 100) {
-    issues.push("Resume content is too short");
-    suggestions.push("Expand your resume to 200-400 words with specific achievements and metrics.");
-  }
-  if (wordCount > 800) {
-    issues.push("Resume content is too long");
-    suggestions.push("Condense to 200-400 words. ATS systems can miss content on second page.");
-  }
-
-  // Grammar check
-  const grammarScore = estimateGrammarScore(parsedText || String(resumeInput?.summary || ""));
-  if (grammarScore < 70) {
-    issues.push("Possible grammar or readability issues detected");
-    suggestions.push("Review sentence structure, eliminate passive voice, use action verbs.");
-  }
-
-  // Format check
-  if (formatScore < 60) {
-    issues.push("Format or structure issues detected");
-    suggestions.push("Use simple formatting. Avoid tables, graphics, and special characters.");
-  }
 
   return {
-    breakdown: {
-      keywords: keywordScore,
-      skills_match: skillsMatchScore,
-      experience_strength: experienceScore,
-      format: formatScore,
-      sections: Math.round((completedSections / 6) * 100),
-      grammar: grammarScore
-    },
-    weightedScore,
-    issues,
-    suggestions
+    id: String(record._id),
+    letter: result.letter,
+    highlights: result.highlights,
+    tone,
+    wordCount: result.wordCount,
+    warnings,
+    role: record.role,
+    company: record.company
   };
 };
 
-const calculateKeywordRelevance = (text, skills) => {
-  const lowerText = String(text || "").toLowerCase();
-  const matchedSkills = skills.filter((skill) =>
-    lowerText.includes(String(skill || "").toLowerCase())
-  ).length;
-  return skills.length > 0 ? Math.min(1, matchedSkills / skills.length) : 0;
+export const listCoverLetters = async (userId, limit = 20) => {
+  return CoverLetter.find({ userId })
+    .sort({ createdAt: -1 })
+    .limit(Math.min(Number(limit) || 20, 50))
+    .select("tone role company content highlights createdAt resumeId jobDescriptionId");
 };
 
-const scoreFormatting = (wordCount, sections) => {
-  let score = 70;
-
-  // Word count quality
-  if (wordCount >= 200 && wordCount <= 400) {
-    score += 20;
-  } else if (wordCount >= 150 && wordCount <= 450) {
-    score += 15;
-  } else if (wordCount >= 100 && wordCount <= 500) {
-    score += 10;
-  } else if (wordCount < 100) {
-    score -= 20;
-  } else if (wordCount > 600) {
-    score -= 15;
-  }
-
-  // Section completeness bonus
-  const sectionCount = Object.values(sections).filter(Boolean).length;
-  score += (sectionCount / 6) * 10;
-
-  return Math.max(30, Math.min(100, score));
-};
-
-const scoreExperienceStrength = (experience = []) => {
-  if (!Array.isArray(experience) || !experience.length) {
-    return 30;
-  }
-
-  let score = Math.min(100, experience.length * 20);
-  const descriptions = experience.map((item) => String(item?.description || ""));
-  const bulletLike = descriptions.filter((line) => /[-•]/.test(line)).length;
-  const metricCount = descriptions.join(" ").match(/\d+%|\$\d+|\d+\+|\d+x/gi)?.length || 0;
-
-  score += bulletLike * 8;
-  score += Math.min(25, metricCount * 5);
-
-  return Math.max(30, Math.min(100, score));
-};
-
-const estimateGrammarScore = (text) => {
-  const normalized = String(text || "").trim();
-  if (!normalized) {
-    return 50;
-  }
-
-  const sentences = normalized.split(/[.!?]+/).map((s) => s.trim()).filter(Boolean);
-  if (!sentences.length) {
-    return 55;
-  }
-
-  let penalty = 0;
-  for (const sentence of sentences) {
-    const words = sentence.split(/\s+/).filter(Boolean);
-    if (words.length > 35) {
-      penalty += 6;
-    }
-    if (!/^[A-Z]/.test(sentence)) {
-      penalty += 4;
-    }
-  }
-
-  const repeatedPunctuation = (normalized.match(/[!?]{2,}|\.{3,}/g) || []).length;
-  penalty += repeatedPunctuation * 3;
-
-  return Math.max(45, 100 - penalty);
-};
-
-const mergeExperienceBullets = (experience = [], bullets = []) => {
-  if (!Array.isArray(experience) || !experience.length || !Array.isArray(bullets) || !bullets.length) {
-    return experience;
-  }
-
-  const mergedText = bullets.slice(0, 8).map((line) => `- ${line}`).join("\n");
-
-  return experience.map((entry, index) => {
-    if (index === 0) {
-      return {
-        ...entry,
-        description: mergedText
-      };
-    }
-    return entry;
-  });
-};
-
-const buildFallbackRoadmap = (missingSkills = []) => {
-  return missingSkills.slice(0, 6).map((skill) => ({
-    skill,
-    resources: [
-      `YouTube: ${skill} full course`,
-      `Roadmap.sh: ${skill.toLowerCase().replace(/\s+/g, "-")}`,
-      `Official docs for ${skill}`
-    ],
-    timeline: "2-4 weeks"
-  }));
+export const updateCoverLetter = async (userId, coverLetterId, content) => {
+  const letter = await CoverLetter.findOne({ _id: coverLetterId, userId });
+  if (!letter) throw serviceError("Cover letter not found");
+  const text = String(content || "").trim();
+  if (!text) throw serviceError("Cover letter content is required.", 400);
+  if (text.length > 20000) throw serviceError("Cover letter is too long.", 413);
+  letter.content = text;
+  await letter.save();
+  return letter;
 };

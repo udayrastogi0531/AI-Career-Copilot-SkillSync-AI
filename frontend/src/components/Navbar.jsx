@@ -78,6 +78,7 @@ export default function Navbar() {
     { to: "/dashboard", label: "Dashboard" },
     { to: "/resume", label: "Resume Hub" },
     { to: "/builder", label: "Resume Builder" },
+    { to: "/studio", label: "LaTeX Studio" },
     { to: "/cover-letter", label: "Cover Letter" },
     { to: "/upload", label: "PDF Parser" },
     { to: "/templates", label: "Templates" },

@@ -1,4 +1,5 @@
 import { asyncHandler } from "../utils/asyncHandler.js";
+import { DOCX_MIME, PDF_MIME } from "../services/documentParser.js";
 import {
   createResume,
   deleteResume,
@@ -8,10 +9,7 @@ import {
   updateResume
 } from "../services/resumeService.js";
 
-const allowedResumeMimeTypes = new Set([
-  "application/pdf",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-]);
+const allowedResumeMimeTypes = new Set([PDF_MIME, DOCX_MIME]);
 
 export const createResumeController = asyncHandler(async (req, res) => {
   const { title } = req.body;
@@ -74,16 +72,9 @@ export const uploadResumePdfDirectController = async (req, res, next) => {
       }
     }
 
-    if (!targetResumeId) {
-      const created = await createResume(req.user.id, {
-        title: "Uploaded Resume",
-        summary: "",
-        skills: []
-      });
-      targetResumeId = String(created._id);
-    }
-
-    const resume = await parseAndStoreResumeFile(req.user.id, targetResumeId, req.file);
+    // With no target, the service creates the resume only after the file parses,
+    // so a rejected upload leaves no empty record behind.
+    const resume = await parseAndStoreResumeFile(req.user.id, targetResumeId || null, req.file);
     return res.status(201).json({ success: true, resume });
   } catch (error) {
     return next(error);

@@ -261,6 +261,9 @@ export default function CareerCoachPage() {
         text: "",
         fullText,
         actions: data.result?.actions || [],
+        citations: data.result?.citations || [],
+        sources: data.result?.sources || [],
+        retrieval: data.result?.retrieval || "",
         timestamp: new Date().toISOString()
       };
       
@@ -472,6 +475,34 @@ export default function CareerCoachPage() {
                         <span>{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                         <span>{isUser ? "Candidate Profile" : "AI Career Mentor"}</span>
                       </div>
+
+                      {/* Grounding sources and citations */}
+                      {!isUser && (msg.sources?.length > 0 || msg.citations?.length > 0) && (
+                        <div className="mt-4 space-y-2 border-t border-white/5 pt-3">
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                            Grounding sources {msg.retrieval ? `(${msg.retrieval})` : ""}
+                          </p>
+                          {msg.citations?.map((citation, idx) => (
+                            <p key={`cite-${idx}`} className="text-xs text-slate-300">
+                              <span className="font-bold text-cyan-300">[{citation.source || idx + 1}]</span>{" "}
+                              {citation.url ? (
+                                <a href={citation.url} target="_blank" rel="noreferrer" className="underline decoration-dotted">
+                                  {citation.title}
+                                </a>
+                              ) : (
+                                citation.title
+                              )}
+                              {citation.quote ? <span className="text-slate-400"> — “{citation.quote}”</span> : null}
+                            </p>
+                          ))}
+                          {!msg.citations?.length &&
+                            msg.sources.slice(0, 4).map((source, idx) => (
+                              <p key={`src-${idx}`} className="text-xs text-slate-400">
+                                • {source.title} {source.kind ? `(${source.kind})` : ""}
+                              </p>
+                            ))}
+                        </div>
+                      )}
 
                       {/* Display suggestions roadmap nodes */}
                       {!isUser && msg.actions && msg.actions.length > 0 && (

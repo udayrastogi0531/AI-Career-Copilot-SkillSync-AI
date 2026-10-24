@@ -14,6 +14,12 @@ const cards = [
     cta: "Open Upload"
   },
   {
+    title: "LaTeX Studio",
+    description: "Edit LaTeX source with a live compiled PDF preview, versions, and AI diffs.",
+    to: "/studio",
+    cta: "Open Studio"
+  },
+  {
     title: "Templates",
     description: "Choose visual style and customization presets.",
     to: "/templates",

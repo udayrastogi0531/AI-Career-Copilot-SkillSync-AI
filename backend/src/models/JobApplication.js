@@ -20,8 +20,18 @@ const jobApplicationSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["applied", "interview", "offer", "rejected"],
-      default: "applied",
+      // "applied" / "interview" / "offer" are kept for existing records;
+      // the tracker UI uses the richer values below.
+      enum: [
+        "saved",
+        "applied",
+        "interviewing",
+        "interview",
+        "offered",
+        "offer",
+        "rejected"
+      ],
+      default: "saved",
       index: true
     },
     date: {

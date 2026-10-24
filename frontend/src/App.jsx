@@ -27,6 +27,7 @@ const ResumeAnalyzerPage = lazy(() => import("./pages/ResumeAnalyzerPage"));
 const ResumeBuilderPage = lazy(() => import("./pages/ResumeBuilderPage"));
 const ResumeHubPage = lazy(() => import("./pages/ResumeHubPage"));
 const ResumeTemplatesPage = lazy(() => import("./pages/ResumeTemplatesPage"));
+const LatexStudioPage = lazy(() => import("./pages/LatexStudioPage"));
 const ResumeUploadPage = lazy(() => import("./pages/ResumeUploadPage"));
 
 const HistoryPage = lazy(() => import("./pages/HistoryPage"));
@@ -128,6 +129,16 @@ const App = () => {
             <ProtectedRoute>
               <AppLayout>
                 <Suspense fallback={PageFallback}><ResumeTemplatesPage /></Suspense>
+              </AppLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/studio"
+          element={
+            <ProtectedRoute>
+              <AppLayout>
+                <Suspense fallback={PageFallback}><LatexStudioPage /></Suspense>
               </AppLayout>
             </ProtectedRoute>
           }
